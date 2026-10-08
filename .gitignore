@@ -1,0 +1,16 @@
+*.iml
+.gradle/
+.idea/
+local.properties
+**/build/
+.externalNativeBuild/
+.cxx/
+captures/
+.DS_Store
+caches/
+daemon/
+native/
+wrapper/
+android/
+.tmp/
+kotlin-profile/
