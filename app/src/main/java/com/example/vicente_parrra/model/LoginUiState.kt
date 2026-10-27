@@ -16,3 +16,4 @@ data class LoginUiState(
     val isLoginEnabled: Boolean
         get() = email.isNotBlank() && password.isNotBlank() && !isLoading
 }
+

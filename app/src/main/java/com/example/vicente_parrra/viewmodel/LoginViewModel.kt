@@ -18,6 +18,7 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = AuthRepository()
     private val preferencias = application.getSharedPreferences("guardian", Context.MODE_PRIVATE)
 
+    // Recupera solo el último correo; la contraseña nunca se guarda localmente.
     private val _estado = MutableStateFlow(
         LoginUiState(
             email = preferencias.getString("ultimo_correo", "") ?: ""
@@ -48,6 +49,7 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
         val email = _estado.value.email
         val password = _estado.value.password
 
+        // Las validaciones se calculan juntas para mostrar todos los errores del formulario.
         val errorEmail = when {
             email.isBlank() -> "Ingrese un correo"
             !email.contains("@") -> "Correo inválido"
@@ -132,3 +134,4 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
         _estado.value = LoginUiState(email = correo)
     }
 }
+

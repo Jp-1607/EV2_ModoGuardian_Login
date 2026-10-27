@@ -5,3 +5,4 @@ data class LoginErrores(
     val password: String? = null,
     val general: String? = null
 )
+

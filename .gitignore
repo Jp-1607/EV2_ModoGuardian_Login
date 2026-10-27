@@ -10,7 +10,8 @@ captures/
 caches/
 daemon/
 native/
-wrapper/
 android/
 .tmp/
 kotlin-profile/
+.kotlin/
+

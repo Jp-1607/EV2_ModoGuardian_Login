@@ -21,6 +21,7 @@ sealed class NavigationEvent {
 
 class NavigationViewModel : ViewModel() {
 
+    // La actividad observa este flujo y ejecuta la navegación desde un solo lugar.
     private val _navigationEvent = MutableSharedFlow<NavigationEvent>()
     val navigationEvent: SharedFlow<NavigationEvent> = _navigationEvent.asSharedFlow()
 
@@ -36,3 +37,4 @@ class NavigationViewModel : ViewModel() {
         }
     }
 }
+
