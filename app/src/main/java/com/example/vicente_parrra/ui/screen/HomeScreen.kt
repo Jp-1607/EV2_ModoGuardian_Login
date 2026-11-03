@@ -18,17 +18,58 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.vicente_parrra.viewmodel.LoginViewModel
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun HomeAdminScreen(
     loginViewModel: LoginViewModel,
+    onCerrarSesion: () -> Unit
+) {
+    HomeScreen(
+        loginViewModel = loginViewModel,
+        rol = "Admin",
+        opciones = listOf("Usuarios", "Roles", "Permisos"),
+        onCerrarSesion = onCerrarSesion
+    )
+}
+
+@Composable
+fun HomeSupervisorScreen(
+    loginViewModel: LoginViewModel,
+    onCerrarSesion: () -> Unit
+) {
+    HomeScreen(
+        loginViewModel = loginViewModel,
+        rol = "Supervisor",
+        opciones = listOf("Indicadores", "Pedidos", "Entregas"),
+        onCerrarSesion = onCerrarSesion
+    )
+}
+
+@Composable
+fun HomeOperadorScreen(
+    loginViewModel: LoginViewModel,
+    onCerrarSesion: () -> Unit
+) {
+    HomeScreen(
+        loginViewModel = loginViewModel,
+        rol = "Operador",
+        opciones = listOf("Rutas", "Entregas", "Actualizar estado"),
+        onCerrarSesion = onCerrarSesion
+    )
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun HomeScreen(
+    loginViewModel: LoginViewModel,
+    rol: String,
+    opciones: List<String>,
     onCerrarSesion: () -> Unit
 ) {
     val estado by loginViewModel.estado.collectAsState()
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Inicio Admin") })
+            TopAppBar(title = { Text("Inicio $rol") })
         }
     ) { padding ->
         Column(
@@ -40,15 +81,15 @@ fun HomeAdminScreen(
         ) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Bienvenido Admin", style = MaterialTheme.typography.headlineSmall)
+                    Text("Bienvenido $rol", style = MaterialTheme.typography.headlineSmall)
                     Text(estado.usuarioLogueado?.email ?: "")
                 }
             }
 
             Text("Opciones")
-            Text("- Usuarios")
-            Text("- Roles")
-            Text("- Permisos")
+            opciones.forEach { opcion ->
+                Text("- $opcion")
+            }
 
             Button(
                 onClick = {
@@ -62,4 +103,3 @@ fun HomeAdminScreen(
         }
     }
 }
-
