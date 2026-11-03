@@ -130,8 +130,11 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun cerrarSesion() {
-        val correo = preferencias.getString("ultimo_correo", "") ?: ""
-        _estado.value = LoginUiState(email = correo)
+        preferencias.edit()
+            .remove("ultimo_correo")
+            .apply()
+
+        _estado.value = LoginUiState()
     }
 }
 

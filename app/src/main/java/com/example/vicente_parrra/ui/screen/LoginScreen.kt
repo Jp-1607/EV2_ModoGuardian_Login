@@ -210,17 +210,6 @@ fun FormularioLogin(
             Text("Iniciar sesión")
         }
     }
-
-    Spacer(modifier = Modifier.height(16.dp))
-
-    Text(
-        text = "Usuarios de prueba",
-        style = MaterialTheme.typography.titleSmall
-    )
-    Text("admin@guardian.test")
-    Text("supervisor@guardian.test")
-    Text("operador@guardian.test")
-    Text("Clave: 123456")
 }
 
 @Preview(showBackground = true, widthDp = 360, heightDp = 800)
