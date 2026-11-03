@@ -198,7 +198,11 @@ fun FormularioLogin(
 
     Button(
         onClick = onLoginClick,
+<<<<<<< HEAD
         enabled = true,
+=======
+        enabled = estado.isLoginEnabled,
+>>>>>>> 74749ddae11902484052d3a534e4878efa64bccc
         modifier = Modifier.fillMaxWidth()
     ) {
         if (estado.isLoading) {
