@@ -75,6 +75,7 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun iniciarSesion(onSuccess: (String) -> Unit) {
+        if (_estado.value.isLoading) return
         if (!validarFormulario()) return
 
         _estado.update {
