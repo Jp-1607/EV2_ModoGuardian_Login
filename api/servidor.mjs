@@ -1,0 +1,222 @@
+import { createServer } from 'node:http'
+import { randomBytes, randomUUID } from 'node:crypto'
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { abrirDatos, claveValida, permisosPorRol, prepararClave, usuarioPublico } from './datos.mjs'
+
+class ErrorApi extends Error {
+  constructor(estado, mensaje) {
+    super(mensaje)
+    this.estado = estado
+  }
+}
+
+function exigir(condicion, estado, mensaje) {
+  if (!condicion) throw new ErrorApi(estado, mensaje)
+}
+
+function responder(respuesta, estado, datos) {
+  respuesta.writeHead(estado, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+  respuesta.end(JSON.stringify(datos))
+}
+
+async function leerCuerpo(peticion) {
+  let bytes = 0
+  const partes = []
+  for await (const parte of peticion) {
+    bytes += parte.length
+    exigir(bytes <= 16_384, 413, 'La solicitud es demasiado grande.')
+    partes.push(parte)
+  }
+  try {
+    const datos = JSON.parse(Buffer.concat(partes).toString('utf8'))
+    exigir(datos && typeof datos === 'object' && !Array.isArray(datos), 400, 'Usa un objeto JSON.')
+    return datos
+  } catch {
+    throw new ErrorApi(400, 'Revisa los datos enviados.')
+  }
+}
+
+function ventasDe(pedidos) {
+  return pedidos.filter(p => p.estado === 'ENTREGADO').map(p => ({
+    id: p.id, cliente: p.cliente, fecha: p.fecha, total: p.total
+  }))
+}
+
+function resumen(datos, usuario, permisos) {
+  const comercial = permisos.includes('comercial')
+  const despacho = permisos.includes('despacho')
+  const repartidor = usuario.rol === 'REPARTIDOR'
+  const ventas = ventasDe(datos.pedidos)
+  return {
+    clientes: comercial ? datos.clientes : [],
+    productos: comercial ? datos.productos : [],
+    pedidos: permisos.includes('pedidos') ? datos.pedidos : [],
+    ventas: comercial ? ventas : [],
+    rutas: despacho ? datos.rutas.filter(r => !repartidor || r.repartidorId === usuario.id) : [],
+    entregas: despacho ? datos.entregas.filter(e => !repartidor || e.repartidorId === usuario.id) : [],
+    indicadores: permisos.includes('indicadores') ? {
+      ventas: ventas.reduce((total, venta) => total + venta.total, 0),
+      meta: datos.metaVentas,
+      pendientes: datos.pedidos.filter(p => p.estado === 'PENDIENTE').length,
+      enRuta: datos.pedidos.filter(p => p.estado === 'EN_RUTA').length,
+      entregados: datos.pedidos.filter(p => p.estado === 'ENTREGADO').length,
+      entregasRealizadas: datos.entregas.filter(e => e.estado === 'ENTREGADO').length,
+      entregasPendientes: datos.entregas.filter(e => e.estado !== 'ENTREGADO').length
+    } : null
+  }
+}
+
+function crearPedido(datos, solicitud, usuario) {
+  exigir(/^[a-f0-9-]{36}$/i.test(solicitud.idOperacion ?? ''), 400, 'Falta el identificador del pedido.')
+  const existente = datos.pedidos.find(p => p.operacion === solicitud.idOperacion && p.vendedorId === usuario.id)
+  if (existente) return existente
+  const cliente = datos.clientes.find(c => c.id === solicitud.clienteId)
+  const ruta = datos.rutas.find(r => r.id === solicitud.rutaId)
+  exigir(cliente && ruta, 422, 'Selecciona un cliente y una ruta válidos.')
+  const fecha = solicitud.fecha
+  const fechaJs = typeof fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(fecha) ? new Date(fecha) : null
+  exigir(fechaJs && Number.isFinite(+fechaJs) && fechaJs.toISOString().slice(0, 10) === fecha, 422, 'Ingresa una fecha válida.')
+  exigir(['NORMAL', 'ALTA'].includes(solicitud.prioridad), 422, 'Selecciona la prioridad.')
+  exigir(Array.isArray(solicitud.items) && solicitud.items.length > 0 && solicitud.items.length <= datos.productos.length, 422, 'Selecciona al menos un producto.')
+  const ids = new Set()
+  const items = solicitud.items.map(item => {
+    const producto = datos.productos.find(p => p.id === item?.productoId)
+    exigir(producto && !ids.has(producto.id) && Number.isInteger(item.cantidad) && item.cantidad >= 1 && item.cantidad <= 99, 422, 'Revisa los productos y sus cantidades.')
+    ids.add(producto.id)
+    return { productoId: producto.id, nombre: producto.nombre, cantidad: item.cantidad, precio: producto.precio }
+  })
+  const id = `PED-${String(datos.pedidos.length + 1).padStart(3, '0')}`
+  const pedido = {
+    id, clienteId: cliente.id, cliente: cliente.nombre, fecha, prioridad: solicitud.prioridad,
+    estado: 'PENDIENTE', total: items.reduce((suma, item) => suma + item.cantidad * item.precio, 0),
+    items, operacion: solicitud.idOperacion, vendedorId: usuario.id
+  }
+  const orden = datos.entregas.filter(e => e.rutaId === ruta.id).length + 1
+  datos.pedidos.push(pedido)
+  datos.entregas.push({
+    id: id.replace('PED-', 'ENT-'), pedidoId: id, rutaId: ruta.id, orden, repartidorId: ruta.repartidorId,
+    cliente: cliente.nombre, direccion: cliente.direccion, horario: 'Por programar',
+    estado: pedido.estado, latitud: ruta.latitud + Math.min(orden, 18) * 0.002,
+    longitud: ruta.longitud + Math.min(orden, 18) * 0.004
+  })
+  return pedido
+}
+
+function cambiarEntrega(datos, usuario, id, estado) {
+  const entrega = datos.entregas.find(e => e.id === id && e.repartidorId === usuario.id)
+  exigir(entrega, 404, 'La entrega no está asignada a esta cuenta.')
+  if (entrega.estado === estado) return entrega
+  const siguiente = { PENDIENTE: 'EN_RUTA', EN_RUTA: 'ENTREGADO' }
+  exigir(siguiente[entrega.estado] && siguiente[entrega.estado] === estado, 409, 'El estado de entrega cambió. Actualiza la información.')
+  entrega.estado = estado
+  datos.pedidos.find(p => p.id === entrega.pedidoId).estado = estado
+  return entrega
+}
+
+function editarUsuario(datos, id, solicitud, actor) {
+  const nombre = typeof solicitud.nombre === 'string' ? solicitud.nombre.trim() : ''
+  const correo = typeof solicitud.correo === 'string' ? solicitud.correo.trim().toLowerCase() : ''
+  const { rol, activo, clave } = solicitud
+  exigir(nombre.length >= 3 && nombre.length <= 80, 422, 'El nombre debe tener entre 3 y 80 caracteres.')
+  exigir(/^[a-z0-9._+-]{1,60}@insertcode\.test$/.test(correo), 422, 'Usa un correo ficticio @insertcode.test.')
+  exigir(Object.hasOwn(permisosPorRol, rol) && typeof activo === 'boolean', 422, 'Selecciona un rol y un estado válidos.')
+  const anterior = id ? datos.usuarios.find(u => u.id === id) : null
+  exigir(!id || anterior, 404, 'El usuario de prueba no existe.')
+  exigir(!datos.usuarios.some(u => u.correo === correo && u.id !== id), 409, 'Ya existe una cuenta con ese correo.')
+  exigir(id !== actor.id || (rol === 'ADMIN' && activo), 409, 'Tu cuenta administradora debe permanecer activa.')
+  if (anterior?.rol === 'REPARTIDOR' && datos.rutas.some(r => r.repartidorId === id)) {
+    exigir(rol === 'REPARTIDOR' && activo, 409, 'Esta cuenta tiene una ruta asignada.')
+    datos.rutas.filter(r => r.repartidorId === id).forEach(r => { r.repartidor = nombre })
+  }
+  exigir((anterior && (clave == null || clave === '')) || (typeof clave === 'string' && clave.length >= 8 && clave.length <= 64), 422, 'La clave de prueba debe tener entre 8 y 64 caracteres.')
+  const identidad = clave ? prepararClave(clave) : { sal: anterior.sal, hash: anterior.hash }
+  const usuario = { id: anterior?.id ?? randomUUID(), nombre, correo, rol, activo, ...identidad }
+  if (anterior) datos.usuarios[datos.usuarios.indexOf(anterior)] = usuario
+  else datos.usuarios.push(usuario)
+  return usuarioPublico(usuario)
+}
+
+export function crearApi(archivo) {
+  const almacen = abrirDatos(archivo)
+  const sesiones = new Map()
+
+  function modificar(accion) {
+    const copia = structuredClone(almacen.datos)
+    const resultado = accion(copia)
+    almacen.guardar(copia)
+    almacen.datos = copia
+    return resultado
+  }
+
+  function autenticar(peticion) {
+    const token = (peticion.headers.authorization ?? '').match(/^Bearer ([a-f0-9]{64})$/)?.[1]
+    const sesion = sesiones.get(token)
+    const usuario = sesion && almacen.datos.usuarios.find(u => u.id === sesion.id && u.activo)
+    exigir(usuario && sesion.vence > Date.now() && sesion.hash === usuario.hash, 401, 'Vuelve a iniciar sesión.')
+    return { usuario, token, permisos: permisosPorRol[usuario.rol] }
+  }
+
+  const servidor = createServer(async (peticion, respuesta) => {
+    try {
+      const ruta = new URL(peticion.url, 'http://localhost').pathname
+      const metodo = peticion.method
+      if (ruta === '/salud' && metodo === 'GET') return responder(respuesta, 200, { estado: 'ok' })
+      const cuerpo = ['POST', 'PATCH', 'PUT'].includes(metodo) ? await leerCuerpo(peticion) : null
+      const datos = almacen.datos
+      if (ruta === '/sesiones' && metodo === 'POST') {
+        const correo = typeof cuerpo.correo === 'string' ? cuerpo.correo.trim().toLowerCase() : ''
+        const clave = typeof cuerpo.clave === 'string' ? cuerpo.clave : ''
+        const usuario = datos.usuarios.find(u => u.correo === correo && u.activo)
+        exigir(usuario && clave.length <= 64 && claveValida(clave, usuario), 401, 'Correo o contraseña de prueba incorrectos.')
+        for (const [id, sesion] of sesiones) if (sesion.vence <= Date.now()) sesiones.delete(id)
+        const token = randomBytes(32).toString('hex')
+        sesiones.set(token, { id: usuario.id, hash: usuario.hash, vence: Date.now() + 28_800_000 })
+        return responder(respuesta, 201, { usuario: usuarioPublico(usuario), token })
+      }
+      const { usuario, token, permisos } = autenticar(peticion)
+      const autorizar = permiso => exigir(permisos.includes(permiso), 403, 'Tu rol no puede realizar esta operación.')
+      if (ruta === '/sesiones/actual' && metodo === 'DELETE') {
+        sesiones.delete(token)
+        return responder(respuesta, 200, { cerrado: true })
+      }
+      if (ruta === '/operacion' && metodo === 'GET') return responder(respuesta, 200, resumen(datos, usuario, permisos))
+      if (ruta === '/rutas-disponibles' && metodo === 'GET') {
+        autorizar('crearPedido')
+        return responder(respuesta, 200, datos.rutas.map(({ id, nombre }) => ({ id, nombre })))
+      }
+      if (ruta === '/pedidos' && metodo === 'POST') {
+        autorizar('crearPedido')
+        return responder(respuesta, 201, modificar(copia => crearPedido(copia, cuerpo, usuario)))
+      }
+      const idEntrega = ruta.match(/^\/entregas\/([\w-]+)\/estado$/)?.[1]
+      if (idEntrega && metodo === 'PATCH') {
+        autorizar('actualizarEntrega')
+        return responder(respuesta, 200, modificar(copia => cambiarEntrega(copia, usuario, idEntrega, cuerpo.estado)))
+      }
+      if (ruta === '/usuarios' && metodo === 'GET') {
+        autorizar('usuarios')
+        return responder(respuesta, 200, datos.usuarios.map(usuarioPublico))
+      }
+      const idUsuario = ruta.match(/^\/usuarios\/([\w-]+)$/)?.[1]
+      if ((ruta === '/usuarios' && metodo === 'POST') || (idUsuario && metodo === 'PUT')) {
+        autorizar('usuarios')
+        return responder(respuesta, idUsuario ? 200 : 201, modificar(copia => editarUsuario(copia, idUsuario, cuerpo, usuario)))
+      }
+      throw new ErrorApi(404, 'No se encontró la operación.')
+    } catch (error) {
+      if (!(error instanceof ErrorApi)) process.stderr.write(`${error.message}\n`)
+      responder(respuesta, error.estado ?? 500, { mensaje: error.estado ? error.message : 'No se pudo completar la operación.' })
+    }
+  })
+  return { servidor, accesos: almacen.accesos }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const { servidor, accesos } = crearApi(process.env.INSERTCODE_DATOS ?? 'api/datos/operacion.json')
+  const puerto = Number(process.env.INSERTCODE_PUERTO ?? 8080)
+  servidor.listen(puerto, '127.0.0.1', () => {
+    process.stdout.write(`API de prueba InsertCode en http://127.0.0.1:${puerto}\n`)
+    for (const { correo, clave } of accesos) process.stdout.write(`${correo}  ${clave}\n`)
+  })
+}

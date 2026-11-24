@@ -15,3 +15,11 @@ android/
 kotlin-profile/
 .kotlin/
 
+
+/api/datos/
+.env
+.env.*
+*.jks
+*.keystore
+*.apk
+*.aab
