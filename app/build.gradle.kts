@@ -39,7 +39,13 @@ android {
     }
 }
 
+val agentePruebas by configurations.creating {
+    isCanBeConsumed = false
+    isTransitive = false
+}
+
 dependencies {
+    agentePruebas("net.bytebuddy:byte-buddy-agent:1.14.17")
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
@@ -76,5 +82,8 @@ dependencies {
 
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
     useJUnitPlatform()
+    jvmArgumentProviders.add(org.gradle.process.CommandLineArgumentProvider {
+        listOf("-javaagent:${agentePruebas.singleFile.absolutePath}")
+    })
 }
 
