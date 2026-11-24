@@ -10,16 +10,23 @@ MVP académico para Android. El vendedor registra un pedido, el repartidor cambi
 
 ## Ejecutar la demostración en Windows
 
-1. Descomprime el ZIP del proyecto. En la carpeta que contiene `gradlew.bat`, haz doble clic en **`Iniciar-InsertCode-Demo.cmd`**.
-2. Deja abierta la ventana que se abre. Inicia la API de prueba y muestra la contraseña ficticia de la demostración.
+1. Descarga y descomprime el código de la rama `evaluacion-3`, o clónala con `git clone -b evaluacion-3 https://github.com/Jp-1607/EV2_ModoGuardian_Login.git`.
+2. En la carpeta que contiene `gradlew.bat`, haz doble clic en **`Iniciar-InsertCode-Demo.cmd`**. La primera vez que arranca la API, la ventana muestra las cuentas ficticias y sus contraseñas. Guarda esos accesos y deja abierta la ventana.
 3. Abre esa misma carpeta en Android Studio, sincroniza Gradle y ejecuta el módulo `app` en el emulador.
-4. Entra como `admin@insertcode.test` con la contraseña que muestra la ventana. También puedes usar `supervisor@insertcode.test`, `vendedor@insertcode.test` o `repartidor@insertcode.test` con esa misma contraseña.
+4. Ingresa con la contraseña que la ventana muestra para la cuenta elegida.
 
-El lanzador requiere Node.js 22 o superior. Si la ventana indica que el puerto 8080 está ocupado, cierra la instancia anterior de la API y abre de nuevo el `.cmd`.
+| Rol | Correo de prueba |
+| --- | --- |
+| Administrador | `admin@insertcode.test` |
+| Supervisor | `supervisor@insertcode.test` |
+| Vendedor | `vendedor@insertcode.test` |
+| Repartidor | `repartidor@insertcode.test` |
+
+El lanzador requiere Node.js 22 o superior. Si el puerto 8080 está ocupado, cierra la instancia anterior de la API y abre de nuevo el `.cmd`.
 
 ## Iniciar la API desde la terminal
 
-Si abriste el repositorio de GitHub, inicia la API desde la raíz con `node api/servidor.mjs`. El primer inicio genera e imprime los cuatro accesos de prueba. La API guarda sus cambios en `api/datos/`. Puedes usar otro archivo de datos para una demostración nueva mediante `INSERTCODE_DATOS`.
+Desde la raíz del proyecto, ejecuta `node api/servidor.mjs`. La API guarda sus cambios en `api/datos/`. Si necesitas accesos nuevos, inicia la API con otro archivo de datos mediante `INSERTCODE_DATOS`. Por ejemplo, en PowerShell puedes ejecutar `$env:INSERTCODE_DATOS = "api/datos/nueva-demo.json"` antes de iniciar la API.
 
 El emulador estándar se conecta a `http://10.0.2.2:8080/`. Para usar un teléfono por USB, ejecuta `adb reverse tcp:8080 tcp:8080`, compila con `./gradlew :app:assembleDebug -PinsertCodeApiUrl=http://127.0.0.1:8080/` e instala con `adb install -r app/build/outputs/apk/debug/app-debug.apk`. En Windows usa `gradlew.bat` en lugar de `./gradlew`. El APK firmado de la entrega también usa el reenvío con `adb reverse`. La opción `-PinsertCodeApiUrl` admite una URL HTTPS de prueba terminada en una barra.
 
