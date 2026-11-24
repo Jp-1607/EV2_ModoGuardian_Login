@@ -8,14 +8,20 @@ MVP académico para Android. El vendedor registra un pedido, el repartidor cambi
 - Android Studio compatible con AGP 8.13, JDK 17 y Android SDK 35.
 - Emulador o teléfono con Android 7.0 o superior. Para un teléfono por USB, activa la depuración USB.
 
-## Ejecutar
+## Ejecutar la demostración en Windows
 
-1. Desde la raíz del proyecto, inicia la API con `node api/servidor.mjs`. El primer inicio imprime cuatro accesos de demostración. Guárdalos para usar la misma base en sesiones posteriores. El archivo que crea la API en `api/datos/` conserva los cambios.
-2. Abre la raíz en Android Studio, sincroniza y ejecuta el módulo `app`. El emulador estándar conecta a `http://10.0.2.2:8080/`.
-3. En teléfono físico, ejecuta `adb reverse tcp:8080 tcp:8080` y compila con `./gradlew :app:assembleDebug -PinsertCodeApiUrl=http://127.0.0.1:8080/`. Instala con `adb install -r app/build/outputs/apk/debug/app-debug.apk`. El APK de demostración firmado también utiliza la conexión reenviada de este paso, tanto en teléfono como en emulador.
-4. Ingresa con uno de los accesos impresos por la API. Si necesitas un conjunto nuevo de datos ficticios sin tocar el anterior, inicia la API con otro archivo local a través de `INSERTCODE_DATOS`.
+1. Descomprime el ZIP del proyecto. En la carpeta que contiene `gradlew.bat`, haz doble clic en **`Iniciar-InsertCode-Demo.cmd`**.
+2. Deja abierta la ventana que se abre. Inicia la API de prueba y muestra la contraseña ficticia de la demostración.
+3. Abre esa misma carpeta en Android Studio, sincroniza Gradle y ejecuta el módulo `app` en el emulador.
+4. Entra como `admin@insertcode.test` con la contraseña que muestra la ventana. También puedes usar `supervisor@insertcode.test`, `vendedor@insertcode.test` o `repartidor@insertcode.test` con esa misma contraseña.
 
-En Windows usa `gradlew.bat` en lugar de `./gradlew`. La API escucha en la interfaz local. La opción `-PinsertCodeApiUrl` también admite un endpoint HTTPS de prueba terminado en una barra.
+El lanzador requiere Node.js 22 o superior. Si la ventana indica que el puerto 8080 está ocupado, cierra la instancia anterior de la API y abre de nuevo el `.cmd`.
+
+## Iniciar la API desde la terminal
+
+Si abriste el repositorio de GitHub, inicia la API desde la raíz con `node api/servidor.mjs`. El primer inicio genera e imprime los cuatro accesos de prueba. La API guarda sus cambios en `api/datos/`. Puedes usar otro archivo de datos para una demostración nueva mediante `INSERTCODE_DATOS`.
+
+El emulador estándar se conecta a `http://10.0.2.2:8080/`. Para usar un teléfono por USB, ejecuta `adb reverse tcp:8080 tcp:8080`, compila con `./gradlew :app:assembleDebug -PinsertCodeApiUrl=http://127.0.0.1:8080/` e instala con `adb install -r app/build/outputs/apk/debug/app-debug.apk`. En Windows usa `gradlew.bat` en lugar de `./gradlew`. El APK firmado de la entrega también usa el reenvío con `adb reverse`. La opción `-PinsertCodeApiUrl` admite una URL HTTPS de prueba terminada en una barra.
 
 ## Verificar el recorrido
 
