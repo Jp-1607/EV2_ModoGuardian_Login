@@ -1,58 +1,38 @@
 package com.example.vicente_parrra.ui.screen
 
-import android.graphics.BitmapFactory
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import com.example.vicente_parrra.ui.components.ImagenInteligente
-import com.example.vicente_parrra.viewmodel.PerfilViewModel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import com.example.vicente_parrra.model.Usuario
+import com.example.vicente_parrra.ui.components.Accion
+import com.example.vicente_parrra.ui.components.Panel
+import com.example.vicente_parrra.ui.components.Pantalla
 
 @Composable
-fun PerfilScreen(modelo: PerfilViewModel) {
-    val imagen by modelo.imagen.collectAsState()
-    val contexto = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var mensaje by remember { mutableStateOf("") }
-    val galeria = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) scope.launch {
-            val foto = withContext(Dispatchers.IO) {
-                runCatching {
-                    val limites = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    contexto.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, limites) }
-                    var escala = 1
-                    while (maxOf(limites.outWidth, limites.outHeight) / escala > 1024) escala *= 2
-                    contexto.contentResolver.openInputStream(uri)?.use {
-                        BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = escala })
-                    }
-                }.getOrNull()
-            }
-            if (foto != null) modelo.desdeGaleria(foto)
-            mensaje = if (foto == null) "No se pudo abrir la imagen" else ""
+fun PerfilScreen(usuario: Usuario, salir: () -> Unit) {
+    Pantalla("Perfil") {
+        Panel(Modifier.fillMaxWidth()) {
+            Text(usuario.nombre, style = MaterialTheme.typography.headlineMedium)
+            Text(usuario.rol.etiqueta, style = MaterialTheme.typography.titleMedium)
+            Text(usuario.correo)
         }
+        Panel(Modifier.fillMaxWidth()) {
+            Text("Permisos de la cuenta", style = MaterialTheme.typography.titleLarge)
+            usuario.permisos.forEach { Text(etiquetaPermiso(it)) }
+        }
+        Accion("Cerrar sesión", salir, secundaria = true)
     }
-    val camara = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { foto ->
-        if (foto != null) modelo.desdeCamara(foto)
-    }
-    Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)) {
-        Text("Foto de perfil")
-        ImagenInteligente(imagen)
-        Button(onClick = { galeria.launch("image/*") }) { Text("Abrir galería") }
-        Button(onClick = {
-            mensaje = ""
-            try { camara.launch(null) } catch (_: android.content.ActivityNotFoundException) {
-                mensaje = "No hay una cámara disponible"
-            }
-        }) { Text("Tomar foto") }
-        if (mensaje.isNotEmpty()) Text(mensaje)
-    }
+}
+
+internal fun etiquetaPermiso(permiso: String): String = when (permiso) {
+    "usuarios" -> "Gestionar usuarios de prueba y sus roles"
+    "comercial" -> "Consultar clientes, catálogo y ventas"
+    "pedidos" -> "Consultar pedidos"
+    "despacho" -> "Consultar rutas y entregas"
+    "indicadores" -> "Consultar indicadores"
+    "crearPedido" -> "Registrar pedidos"
+    "actualizarEntrega" -> "Actualizar entregas asignadas"
+    else -> permiso
 }

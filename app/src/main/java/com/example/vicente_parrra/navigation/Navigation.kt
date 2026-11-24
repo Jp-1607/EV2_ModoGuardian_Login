@@ -1,40 +1,23 @@
 package com.example.vicente_parrra.navigation
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.launch
+import com.example.vicente_parrra.model.Usuario
 
-sealed class Screen(val route: String) {
-    data object Login : Screen("login")
-    data object HomeAdmin : Screen("home_admin")
-    data object HomeSupervisor : Screen("home_supervisor")
-    data object HomeOperador : Screen("home_operador")
-}
+enum class Screen(val route: String, val titulo: String, val permiso: String? = null) {
+    Inicio("inicio", "Inicio"),
+    Pedidos("pedidos", "Pedidos", "pedidos"),
+    Catalogo("catalogo", "Catálogo", "comercial"),
+    Clientes("clientes", "Clientes", "comercial"),
+    Ventas("ventas", "Ventas", "comercial"),
+    Rutas("rutas", "Rutas", "despacho"),
+    Entregas("entregas", "Entregas", "despacho"),
+    Perfil("perfil", "Perfil"),
+    Usuarios("usuarios", "Usuarios", "usuarios"),
+    NuevoPedido("nuevo_pedido", "Nuevo pedido", "crearPedido");
 
-sealed class NavigationEvent {
-    data class NavigateTo(val screen: Screen) : NavigationEvent()
-    data object NavigateBack : NavigationEvent()
-}
+    fun disponible(usuario: Usuario): Boolean = permiso == null || usuario.puede(permiso)
 
-class NavigationViewModel : ViewModel() {
-
-    // La actividad observa este flujo y ejecuta la navegación desde un solo lugar.
-    private val _navigationEvent = MutableSharedFlow<NavigationEvent>()
-    val navigationEvent: SharedFlow<NavigationEvent> = _navigationEvent.asSharedFlow()
-
-    fun navigateTo(screen: Screen) {
-        viewModelScope.launch {
-            _navigationEvent.emit(NavigationEvent.NavigateTo(screen))
-        }
-    }
-
-    fun navigateBack() {
-        viewModelScope.launch {
-            _navigationEvent.emit(NavigationEvent.NavigateBack)
-        }
+    companion object {
+        fun menu(usuario: Usuario): List<Screen> =
+            listOf(Inicio, Pedidos, Catalogo, Rutas, Perfil).filter { it.disponible(usuario) }
     }
 }
-

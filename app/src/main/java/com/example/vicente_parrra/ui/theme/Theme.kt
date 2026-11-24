@@ -1,46 +1,63 @@
 package com.example.vicente_parrra.ui.theme
 
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
+object Espacio {
+    val xs = 4.dp
+    val s = 8.dp
+    val m = 12.dp
+    val l = 16.dp
+    val xl = 24.dp
+    val xxl = 32.dp
+    val tactil = 48.dp
+    val linea = 1.dp
+    val foco = 2.dp
+    val sombra = 3.dp
+}
+
+private val Colores = lightColorScheme(
+    primary = Pino,
+    onPrimary = Papel,
+    primaryContainer = Salvia,
+    onPrimaryContainer = Pino,
+    secondary = Cobre,
+    onSecondary = Color.White,
+    secondaryContainer = Arcilla,
+    onSecondaryContainer = Cobre,
+    tertiary = Ocre,
+    onTertiary = Papel,
+    tertiaryContainer = Arena,
+    onTertiaryContainer = Ocre,
+    background = Marfil,
+    onBackground = Tinta,
+    surface = Papel,
+    onSurface = Tinta,
+    surfaceVariant = Salvia,
+    onSurfaceVariant = TintaSuave,
+    surfaceTint = Color.Transparent,
+    outline = Borde,
+    outlineVariant = Borde,
+    error = Granate,
+    onError = Color.White,
+    errorContainer = Arcilla,
+    onErrorContainer = Granate
 )
 
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
+private val Formas = Shapes(
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(14.dp),
+    large = RoundedCornerShape(14.dp),
+    extraLarge = RoundedCornerShape(14.dp)
 )
 
 @Composable
-fun Vicente_parrraTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
-    content: @Composable () -> Unit
-) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
-
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+fun Vicente_parrraTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = Colores, typography = Typography, shapes = Formas, content = content)
 }
-
