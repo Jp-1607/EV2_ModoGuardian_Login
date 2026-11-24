@@ -2,7 +2,7 @@ import { createServer } from 'node:http'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { abrirDatos, claveValida, permisosPorRol, prepararClave, usuarioPublico } from './datos.mjs'
+import { abrirDatos, claveValida, permisosDe, permisosPorRol, prepararClave, usuarioPublico } from './datos.mjs'
 
 class ErrorApi extends Error {
   constructor(estado, mensaje) {
@@ -70,7 +70,6 @@ function resumen(datos, usuario, permisos) {
 function crearPedido(datos, solicitud, usuario) {
   exigir(/^[a-f0-9-]{36}$/i.test(solicitud.idOperacion ?? ''), 400, 'Falta el identificador del pedido.')
   const existente = datos.pedidos.find(p => p.operacion === solicitud.idOperacion && p.vendedorId === usuario.id)
-  if (existente) return existente
   const cliente = datos.clientes.find(c => c.id === solicitud.clienteId)
   const ruta = datos.rutas.find(r => r.id === solicitud.rutaId)
   exigir(cliente && ruta, 422, 'Selecciona un cliente y una ruta válidos.')
@@ -86,6 +85,15 @@ function crearPedido(datos, solicitud, usuario) {
     ids.add(producto.id)
     return { productoId: producto.id, nombre: producto.nombre, cantidad: item.cantidad, precio: producto.precio }
   })
+  if (existente) {
+    const entrega = datos.entregas.find(e => e.pedidoId === existente.id)
+    const mismoPedido = existente.clienteId === cliente.id && entrega?.rutaId === ruta.id &&
+      existente.fecha === fecha && existente.prioridad === solicitud.prioridad &&
+      existente.items.length === items.length &&
+      items.every(item => existente.items.some(i => i.productoId === item.productoId && i.cantidad === item.cantidad))
+    exigir(mismoPedido, 409, 'El pedido original ya quedó registrado. Revísalo en Pedidos.')
+    return existente
+  }
   const id = `PED-${String(datos.pedidos.length + 1).padStart(3, '0')}`
   const pedido = {
     id, clienteId: cliente.id, cliente: cliente.nombre, fecha, prioridad: solicitud.prioridad,
@@ -124,14 +132,23 @@ function editarUsuario(datos, id, solicitud, actor) {
   const anterior = id ? datos.usuarios.find(u => u.id === id) : null
   exigir(!id || anterior, 404, 'El usuario de prueba no existe.')
   exigir(!datos.usuarios.some(u => u.correo === correo && u.id !== id), 409, 'Ya existe una cuenta con ese correo.')
-  exigir(id !== actor.id || (rol === 'ADMIN' && activo), 409, 'Tu cuenta administradora debe permanecer activa.')
+  const disponibles = permisosPorRol[rol]
+  const solicitados = solicitud.permisos ?? disponibles
+  exigir(Array.isArray(solicitados) && solicitados.every(p => disponibles.includes(p)), 422, 'El rol no admite uno de los permisos.')
+  const permisos = disponibles.filter(p => solicitados.includes(p))
+  exigir(!permisos.includes('crearPedido') || (permisos.includes('comercial') && permisos.includes('pedidos')),
+    422, 'Registrar pedidos requiere acceso a clientes, catálogo y pedidos.')
+  exigir(!permisos.includes('actualizarEntrega') || permisos.includes('despacho'),
+    422, 'Actualizar entregas requiere acceso a rutas y entregas.')
+  exigir(id !== actor.id || (rol === 'ADMIN' && activo && permisos.includes('usuarios')),
+    409, 'Tu cuenta debe conservar permisos de administración.')
   if (anterior?.rol === 'REPARTIDOR' && datos.rutas.some(r => r.repartidorId === id)) {
     exigir(rol === 'REPARTIDOR' && activo, 409, 'Esta cuenta tiene una ruta asignada.')
     datos.rutas.filter(r => r.repartidorId === id).forEach(r => { r.repartidor = nombre })
   }
   exigir((anterior && (clave == null || clave === '')) || (typeof clave === 'string' && clave.length >= 8 && clave.length <= 64), 422, 'La clave de prueba debe tener entre 8 y 64 caracteres.')
   const identidad = clave ? prepararClave(clave) : { sal: anterior.sal, hash: anterior.hash }
-  const usuario = { id: anterior?.id ?? randomUUID(), nombre, correo, rol, activo, ...identidad }
+  const usuario = { id: anterior?.id ?? randomUUID(), nombre, correo, rol, activo, permisos, ...identidad }
   if (anterior) datos.usuarios[datos.usuarios.indexOf(anterior)] = usuario
   else datos.usuarios.push(usuario)
   return usuarioPublico(usuario)
@@ -153,8 +170,8 @@ export function crearApi(archivo) {
     const token = (peticion.headers.authorization ?? '').match(/^Bearer ([a-f0-9]{64})$/)?.[1]
     const sesion = sesiones.get(token)
     const usuario = sesion && almacen.datos.usuarios.find(u => u.id === sesion.id && u.activo)
-    exigir(usuario && sesion.vence > Date.now() && sesion.hash === usuario.hash, 401, 'Vuelve a iniciar sesión.')
-    return { usuario, token, permisos: permisosPorRol[usuario.rol] }
+    exigir(usuario && sesion.vence > Date.now() && sesion.hash === usuario.hash && sesion.rol === usuario.rol && sesion.permisos === permisosDe(usuario).join(), 401, 'Vuelve a iniciar sesión.')
+    return { usuario, token, permisos: permisosDe(usuario) }
   }
 
   const servidor = createServer(async (peticion, respuesta) => {
@@ -171,7 +188,7 @@ export function crearApi(archivo) {
         exigir(usuario && clave.length <= 64 && claveValida(clave, usuario), 401, 'Correo o contraseña de prueba incorrectos.')
         for (const [id, sesion] of sesiones) if (sesion.vence <= Date.now()) sesiones.delete(id)
         const token = randomBytes(32).toString('hex')
-        sesiones.set(token, { id: usuario.id, hash: usuario.hash, vence: Date.now() + 28_800_000 })
+        sesiones.set(token, { id: usuario.id, hash: usuario.hash, rol: usuario.rol, permisos: permisosDe(usuario).join(), vence: Date.now() + 28_800_000 })
         return responder(respuesta, 201, { usuario: usuarioPublico(usuario), token })
       }
       const { usuario, token, permisos } = autenticar(peticion)
@@ -196,7 +213,7 @@ export function crearApi(archivo) {
       }
       if (ruta === '/usuarios' && metodo === 'GET') {
         autorizar('usuarios')
-        return responder(respuesta, 200, datos.usuarios.map(usuarioPublico))
+        return responder(respuesta, 200, { usuarios: datos.usuarios.map(usuarioPublico), permisosPorRol })
       }
       const idUsuario = ruta.match(/^\/usuarios\/([\w-]+)$/)?.[1]
       if ((ruta === '/usuarios' && metodo === 'POST') || (idUsuario && metodo === 'PUT')) {

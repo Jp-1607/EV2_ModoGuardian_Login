@@ -25,8 +25,13 @@ export function claveValida(clave, usuario) {
   return timingSafeEqual(scryptSync(clave, usuario.sal, 32), Buffer.from(usuario.hash, 'hex'))
 }
 
-export function usuarioPublico({ id, nombre, correo, rol, activo }) {
-  return { id, nombre, correo, rol, activo, permisos: permisosPorRol[rol] }
+export function permisosDe(usuario) {
+  return usuario.permisos ?? permisosPorRol[usuario.rol]
+}
+
+export function usuarioPublico(usuario) {
+  const { id, nombre, correo, rol, activo } = usuario
+  return { id, nombre, correo, rol, activo, permisos: permisosDe(usuario) }
 }
 
 function datosIniciales() {
