@@ -34,10 +34,10 @@ export function usuarioPublico(usuario) {
   return { id, nombre, correo, rol, activo, permisos: permisosDe(usuario) }
 }
 
-function datosIniciales() {
+function datosIniciales(claveDemo) {
   const accesos = cuentas.map(([id, nombre, rol]) => {
     const correo = `${id}@insertcode.test`
-    const clave = randomBytes(6).toString('base64url')
+    const clave = claveDemo ?? randomBytes(6).toString('base64url')
     return { clave, usuario: { id, nombre, correo, rol, activo: true, ...prepararClave(clave) } }
   })
   const clientes = [
@@ -72,7 +72,10 @@ function datosIniciales() {
   }
 }
 
-export function abrirDatos(archivo) {
+export function abrirDatos(archivo, claveDemo) {
+  if (claveDemo != null && (claveDemo.length < 8 || claveDemo.length > 64)) {
+    throw new Error('La contraseña de demostración debe tener entre 8 y 64 caracteres.')
+  }
   function guardar(datos) {
     mkdirSync(dirname(archivo), { recursive: true })
     writeFileSync(`${archivo}.tmp`, JSON.stringify(datos), { mode: 0o600 })
@@ -83,7 +86,7 @@ export function abrirDatos(archivo) {
     return { datos: JSON.parse(readFileSync(archivo, 'utf8')), accesos: [], guardar }
   } catch (error) {
     if (error.code !== 'ENOENT') throw error
-    const inicial = datosIniciales()
+    const inicial = datosIniciales(claveDemo)
     guardar(inicial.datos)
     return { ...inicial, guardar }
   }

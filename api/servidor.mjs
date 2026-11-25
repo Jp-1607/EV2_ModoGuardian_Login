@@ -1,8 +1,10 @@
 import { createServer } from 'node:http'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { abrirDatos, claveValida, permisosDe, permisosPorRol, prepararClave, usuarioPublico } from './datos.mjs'
+import { crearAccesoGoogle, ErrorGoogle } from './google.mjs'
 
 class ErrorApi extends Error {
   constructor(estado, mensaje) {
@@ -132,6 +134,7 @@ function editarUsuario(datos, id, solicitud, actor) {
   const anterior = id ? datos.usuarios.find(u => u.id === id) : null
   exigir(!id || anterior, 404, 'El usuario de prueba no existe.')
   exigir(!datos.usuarios.some(u => u.correo === correo && u.id !== id), 409, 'Ya existe una cuenta con ese correo.')
+  exigir(!anterior?.googleDemo || rol === 'VENDEDOR', 422, 'Las cuentas de Google de demostración solo pueden ser Vendedor.')
   const disponibles = permisosPorRol[rol]
   const solicitados = solicitud.permisos ?? disponibles
   exigir(Array.isArray(solicitados) && solicitados.every(p => disponibles.includes(p)), 422, 'El rol no admite uno de los permisos.')
@@ -148,15 +151,52 @@ function editarUsuario(datos, id, solicitud, actor) {
   }
   exigir((anterior && (clave == null || clave === '')) || (typeof clave === 'string' && clave.length >= 8 && clave.length <= 64), 422, 'La clave de prueba debe tener entre 8 y 64 caracteres.')
   const identidad = clave ? prepararClave(clave) : { sal: anterior.sal, hash: anterior.hash }
-  const usuario = { id: anterior?.id ?? randomUUID(), nombre, correo, rol, activo, permisos, ...identidad }
+  const usuario = { ...anterior, id: anterior?.id ?? randomUUID(), nombre, correo, rol, activo, permisos, ...identidad }
   if (anterior) datos.usuarios[datos.usuarios.indexOf(anterior)] = usuario
   else datos.usuarios.push(usuario)
   return usuarioPublico(usuario)
 }
 
-export function crearApi(archivo) {
-  const almacen = abrirDatos(archivo)
+function registrarCuenta(datos, solicitud) {
+  const nombre = typeof solicitud.nombre === 'string' ? solicitud.nombre.trim() : ''
+  const correo = typeof solicitud.correo === 'string' ? solicitud.correo.trim().toLowerCase() : ''
+  const clave = solicitud.clave
+  exigir(nombre.length >= 3 && nombre.length <= 80, 422, 'Ingresa un nombre ficticio de 3 a 80 caracteres.')
+  exigir(/^[a-z0-9._+-]{1,60}@insertcode\.test$/.test(correo), 422, 'Usa un correo ficticio @insertcode.test.')
+  exigir(typeof clave === 'string' && clave.length >= 8 && clave.length <= 64, 422, 'Usa entre 8 y 64 caracteres.')
+  exigir(!datos.usuarios.some(u => u.correo === correo), 409, 'Ese correo ya está registrado.')
+  const usuario = { id: randomUUID(), nombre, correo, rol: 'VENDEDOR', activo: true, ...prepararClave(clave) }
+  datos.usuarios.push(usuario)
+  return usuario
+}
+
+function registrarGoogle(datos, { id: googleId, demostracion }) {
+  exigir(!datos.usuarios.some(u => u.googleId === googleId), 409, 'Esta cuenta de Google ya está registrada. Usa Ingresar con Google.')
+  const id = randomUUID()
+  const usuario = {
+    id, nombre: 'Vendedor de prueba', correo: `google-${id}@insertcode.test`,
+    rol: 'VENDEDOR', activo: true, googleId, googleDemo: demostracion
+  }
+  datos.usuarios.push(usuario)
+  return usuario
+}
+
+export function crearApi(archivo, {
+  clienteGoogle, consultarGoogle, claveDemo, habilitarDemoGoogle = false
+} = {}) {
+  const almacen = abrirDatos(archivo, claveDemo)
+  const google = crearAccesoGoogle(clienteGoogle, consultarGoogle, habilitarDemoGoogle)
   const sesiones = new Map()
+
+  function emitirSesion(usuario) {
+    for (const [id, sesion] of sesiones) if (sesion.vence <= Date.now()) sesiones.delete(id)
+    const token = randomBytes(32).toString('hex')
+    sesiones.set(token, {
+      id: usuario.id, hash: usuario.hash, rol: usuario.rol,
+      permisos: permisosDe(usuario).join(), vence: Date.now() + 28_800_000
+    })
+    return { usuario: usuarioPublico(usuario), token }
+  }
 
   function modificar(accion) {
     const copia = structuredClone(almacen.datos)
@@ -185,11 +225,26 @@ export function crearApi(archivo) {
         const correo = typeof cuerpo.correo === 'string' ? cuerpo.correo.trim().toLowerCase() : ''
         const clave = typeof cuerpo.clave === 'string' ? cuerpo.clave : ''
         const usuario = datos.usuarios.find(u => u.correo === correo && u.activo)
-        exigir(usuario && clave.length <= 64 && claveValida(clave, usuario), 401, 'Correo o contraseña de prueba incorrectos.')
-        for (const [id, sesion] of sesiones) if (sesion.vence <= Date.now()) sesiones.delete(id)
-        const token = randomBytes(32).toString('hex')
-        sesiones.set(token, { id: usuario.id, hash: usuario.hash, rol: usuario.rol, permisos: permisosDe(usuario).join(), vence: Date.now() + 28_800_000 })
-        return responder(respuesta, 201, { usuario: usuarioPublico(usuario), token })
+        exigir(usuario?.hash && clave.length <= 64 && claveValida(clave, usuario), 401, 'Correo o contraseña de prueba incorrectos.')
+        return responder(respuesta, 201, emitirSesion(usuario))
+      }
+      if (ruta === '/registro' && metodo === 'POST') {
+        const usuario = modificar(copia => registrarCuenta(copia, cuerpo))
+        return responder(respuesta, 201, emitirSesion(usuario))
+      }
+      if (ruta === '/google/desafio' && metodo === 'GET') {
+        return responder(respuesta, 200, google.crearDesafio())
+      }
+      if ((ruta === '/sesiones/google' || ruta === '/registro/google') && metodo === 'POST') {
+        const identidad = await google.verificar(cuerpo)
+        if (ruta === '/registro/google') {
+          const usuario = modificar(copia => registrarGoogle(copia, identidad))
+          return responder(respuesta, 201, emitirSesion(usuario))
+        }
+        const usuario = almacen.datos.usuarios.find(u => u.googleId === identidad.id)
+        exigir(usuario, 404, 'Primero registra esta cuenta con Google.')
+        exigir(usuario.activo, 403, 'La cuenta está desactivada.')
+        return responder(respuesta, 201, emitirSesion(usuario))
       }
       const { usuario, token, permisos } = autenticar(peticion)
       const autorizar = permiso => exigir(permisos.includes(permiso), 403, 'Tu rol no puede realizar esta operación.')
@@ -222,15 +277,31 @@ export function crearApi(archivo) {
       }
       throw new ErrorApi(404, 'No se encontró la operación.')
     } catch (error) {
-      if (!(error instanceof ErrorApi)) process.stderr.write(`${error.message}\n`)
-      responder(respuesta, error.estado ?? 500, { mensaje: error.estado ? error.message : 'No se pudo completar la operación.' })
+      const conocido = error instanceof ErrorApi || error instanceof ErrorGoogle
+      if (!conocido) process.stderr.write(`${error.message}\n`)
+      responder(respuesta, conocido ? error.estado : 500, {
+        mensaje: conocido ? error.message : 'No se pudo completar la operación.'
+      })
     }
   })
   return { servidor, accesos: almacen.accesos }
 }
 
+function clienteGoogleLocal() {
+  if (process.env.INSERTCODE_GOOGLE_CLIENT_ID) return process.env.INSERTCODE_GOOGLE_CLIENT_ID.trim()
+  try {
+    return readFileSync('api/datos/google-client-id.txt', 'utf8').trim()
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+    return undefined
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const { servidor, accesos } = crearApi(process.env.INSERTCODE_DATOS ?? 'api/datos/operacion.json')
+  const { servidor, accesos } = crearApi(process.env.INSERTCODE_DATOS ?? 'api/datos/operacion.json', {
+    clienteGoogle: clienteGoogleLocal(), claveDemo: process.env.INSERTCODE_CLAVE_DEMO,
+    habilitarDemoGoogle: process.argv.includes('--demo-google')
+  })
   const puerto = Number(process.env.INSERTCODE_PUERTO ?? 8080)
   servidor.listen(puerto, '127.0.0.1', () => {
     process.stdout.write(`API de prueba InsertCode en http://127.0.0.1:${puerto}\n`)
