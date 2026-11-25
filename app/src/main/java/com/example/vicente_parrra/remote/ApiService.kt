@@ -3,7 +3,10 @@ package com.example.vicente_parrra.remote
 import com.example.vicente_parrra.model.Administracion
 import com.example.vicente_parrra.model.CambioEntrega
 import com.example.vicente_parrra.model.CambiosUsuario
+import com.example.vicente_parrra.model.CredencialGoogle
 import com.example.vicente_parrra.model.Credenciales
+import com.example.vicente_parrra.model.DesafioGoogle
+import com.example.vicente_parrra.model.RegistroCuenta
 import com.example.vicente_parrra.model.Entrega
 import com.example.vicente_parrra.model.NuevoPedido
 import com.example.vicente_parrra.model.Operacion
@@ -24,6 +27,18 @@ import retrofit2.http.Path
 interface ApiService {
     @POST("sesiones")
     suspend fun autenticar(@Body datos: Credenciales): Sesion
+
+    @POST("registro")
+    suspend fun registrar(@Body datos: RegistroCuenta): Sesion
+
+    @GET("google/desafio")
+    suspend fun desafioGoogle(): DesafioGoogle
+
+    @POST("sesiones/google")
+    suspend fun ingresarGoogle(@Body datos: CredencialGoogle): Sesion
+
+    @POST("registro/google")
+    suspend fun registrarGoogle(@Body datos: CredencialGoogle): Sesion
 
     @DELETE("sesiones/actual")
     suspend fun cerrar(@Header("Authorization") sesion: String): Response<Unit>
