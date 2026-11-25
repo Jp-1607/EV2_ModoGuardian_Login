@@ -1,35 +1,34 @@
 package com.example.vicente_parrra.repository
 
-import kotlinx.coroutines.runBlocking
+import com.example.vicente_parrra.model.Credenciales
+import com.example.vicente_parrra.model.Rol
+import com.example.vicente_parrra.model.Sesion
+import com.example.vicente_parrra.model.Usuario
+import com.example.vicente_parrra.remote.ApiService
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
+import retrofit2.Response
 
 class AuthRepositoryTest {
-
-    private val repository = AuthRepository()
+    private val api = mockk<ApiService>()
+    private val repositorio = AuthRepository(api)
+    private val usuario = Usuario("v1", "Ventas de prueba", "ventas@insertcode.test", Rol.VENDEDOR, true, listOf("pedidos"))
+    private val sesion = Sesion(usuario, "token-de-prueba")
 
     @Test
-    fun usuariosObligatoriosInicianSesionConSuRol() = runBlocking {
-        val usuarios = mapOf(
-            "admin@guardian.test" to "Admin",
-            "supervisor@guardian.test" to "Supervisor",
-            "operador@guardian.test" to "Operador"
-        )
-
-        usuarios.forEach { (email, rolEsperado) ->
-            val resultado = repository.autenticar(email, "123456")
-
-            assertTrue(resultado.isSuccess)
-            assertEquals(rolEsperado, resultado.getOrThrow().rol)
-        }
+    fun enviaElCorreoSinEspaciosYRecuperaElRolDeLaApi() = runTest {
+        coEvery { api.autenticar(Credenciales(usuario.correo, "clave-de-test")) } returns sesion
+        assertEquals(Rol.VENDEDOR, repositorio.autenticar("  ${usuario.correo} ", "clave-de-test").usuario.rol)
     }
 
     @Test
-    fun contraseñaIncorrectaDevuelveError() = runBlocking {
-        val resultado = repository.autenticar("admin@guardian.test", "incorrecta")
-
-        assertTrue(resultado.isFailure)
-        assertEquals("Contraseña incorrecta", resultado.exceptionOrNull()?.message)
+    fun cierraLaSesionDelServidor() = runTest {
+        coEvery { api.cerrar("Bearer ${sesion.token}") } returns Response.success(Unit)
+        repositorio.cerrar(sesion)
+        coVerify(exactly = 1) { api.cerrar("Bearer ${sesion.token}") }
     }
 }
